@@ -1,5 +1,5 @@
 [package]
-name = "minesweeper"
+name = "consolesweeper"
 version = "0.1.0"
 authors = ["Master0r0/SarahGreyWolf <m.sarahgreywolf@outlook.com>"]
 edition = "2018"

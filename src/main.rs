@@ -1,6 +1,7 @@
 #![feature(exclusive_range_pattern)]
 
 use std::io::{self, Read};
+use rand::prelude::*;
 
 #[derive(Debug, PartialEq, Eq)]
 enum State {
@@ -46,11 +47,12 @@ impl Into<u8> for Cell {
     }
 }
 
-const WIDTH: usize = 10;
-const HEIGHT: usize = 10;
+const WIDTH: usize = 30;
+const HEIGHT: usize = 30;
 
 struct GameState {
     field: [u8; WIDTH*HEIGHT],
+    mine_positions: Vec<[u16; 2]>,
     score: u64,
     running: bool,
     losses: u64,
@@ -59,8 +61,19 @@ struct GameState {
 
 impl GameState {
     fn init() -> Self {
+        let mut field: [u8; WIDTH*HEIGHT] = [0x00; WIDTH*HEIGHT];
+        let mut mine_positions: Vec<[u16; 2]> = vec![];
+        let mut rng = rand::thread_rng();
+        for i in 0..WIDTH {
+            let x: u16 = rng.gen_range(0, WIDTH as u16);
+            let y: u16 = rng.gen_range(0, HEIGHT as u16);
+            mine_positions.push([x,y]);
+            field[x as usize + y as usize * WIDTH] = 0x09;
+        }
+
         Self {
-            field: [0x00; WIDTH*HEIGHT],
+            field,
+            mine_positions,
             score: 0,
             running: true,
             losses: 0,
@@ -69,13 +82,13 @@ impl GameState {
     }
 
     fn run(&mut self) {
-        let mut in_accepted = false;
+        let mut coord: [u16; 2] = [0; 2];
         loop {
+            let mut in_accepted = false;
+            draw(&self.field);
             if !self.running {
                 break;
             }
-            in_accepted = false;
-            draw(&self.field);
             println!("Please enter where you would like to target in the format 'x y command', or exit");
             println!("Where command is reveal or mark");
             while !in_accepted {
@@ -86,43 +99,51 @@ impl GameState {
                     self.running = false;
                     break;
                 }
-                in_accepted = self.execute(&buffer);
+                let (n_in_accepted, n_coord) = self.execute(&buffer);
+                in_accepted = n_in_accepted;
+                coord = n_coord.unwrap();
                 if !in_accepted {
                     println!("The command you entered was incorrect");
                     println!("Please enter the command as 'x y command' where command is reveal or mark");
                 }
             }
-
+            let cell = Cell::from(self.field[coord[0] as usize + coord[1] as usize * WIDTH]);
+            if cell.value == 9 {
+                self.running = false;
+                reveal_bombs(&mut self.field);
+            }
         }
+        println!("Game Over!");
     }
 
-    fn execute(&mut self, command: &str) -> bool {
+    fn execute(&mut self, command: &str) -> (bool, Option<[u16; 2]>) {
         let split: Vec<String> = command.split_ascii_whitespace().map(|s| s.to_string()).collect();
         if split.len() == 3 {
             let command = split[2].to_lowercase();
             let x = split[0].parse::<u16>().expect("Failed to parse string to u16");
             let y = split[1].parse::<u16>().expect("Failed to parse string to u16");
             if x as usize > WIDTH || y as usize > HEIGHT {
-                return false;
+                return (false, Some([x, y]));
             }
             let mut cell = Cell::from(self.field[x as usize + y as usize * WIDTH]);
             match command.as_str() {
                 "reveal" => {
                     if cell.state == State::Hidden || cell.state == State::Marked {
                         cell.state = State::Revealed;
+                        reveal([x, y], &mut self.field);
                     }
                 },
                 "mark" => {
                     cell.state = State::Marked;
                 },
                 _ => {
-                    return false;
+                    return (false, Some([x, y]));
                 }
             }
             self.field[x as usize + y as usize * WIDTH] = cell.into();
-            return true;
+            return (true, Some([x, y]));
         } else {
-            false
+            (false, None)
         }
     }
 }
@@ -161,6 +182,46 @@ fn draw(field: &[u8; WIDTH*HEIGHT]) {
     }
 }
 
-fn reveal(field: &mut [u8; WIDTH*HEIGHT]) {
-    
+fn reveal(origin: [u16; 2], field: &mut [u8; WIDTH*HEIGHT]) {
+    let cell_origin = Cell::from(field[origin[0] as usize + origin[1] as usize * WIDTH]);
+    if origin[0] > 0 && (origin[0] as usize) < WIDTH && origin[1] > 0 && (origin[1] as usize) < HEIGHT &&
+       (origin[0] as usize) + (origin[1] as usize) * WIDTH < WIDTH*HEIGHT {
+        //println!("{:#}:{:#}", origin[0], origin[1]);
+        for c in 0..9 {
+            let mut pos: [u16; 2] = [0; 2];
+            if c < 3 {
+                pos = [origin[0]+c-1, origin[1]-1];
+            } else if 2 < c && c < 6 {
+                for x in 0..2 {
+                    pos = [origin[0]+x-1, origin[1]];
+                }
+            } else {
+                for x in 0..2 {
+                    pos = [origin[0]+x-1, origin[1]+1];
+                }
+            }
+            if (pos[0] as usize) + (pos[1] as usize) * WIDTH < WIDTH*HEIGHT {
+                let mut n_cell = Cell::from(field[pos[0] as usize + pos[1] as usize * WIDTH]);
+                if pos != origin && n_cell.state != State::Revealed && n_cell.value != 9 {
+                    if n_cell.value < 9 {
+                        n_cell.state = State::Revealed;
+                        field[pos[0] as usize + pos[1] as usize * WIDTH] = n_cell.into();
+                    }
+                    reveal(pos, field);
+                }
+            }
+        }
+    }
+}
+
+fn reveal_bombs(field: &mut [u8; WIDTH*HEIGHT]) {
+    for y in 0..HEIGHT {
+        for x in 0..WIDTH {
+            let mut cell = Cell::from(field[x + y * WIDTH]);
+            if cell.value == 9 {
+                cell.state = State::Revealed;
+                field[x+y*WIDTH] = cell.into();
+            }
+        }
+    }
 }

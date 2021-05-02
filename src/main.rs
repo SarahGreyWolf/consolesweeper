@@ -108,7 +108,7 @@ impl GameState {
                 }
             }
             let cell = Cell::from(self.field[coord[0] as usize + coord[1] as usize * WIDTH]);
-            if cell.value == 9 {
+            if cell.value == 9 && cell.state != State::Marked {
                 self.running = false;
                 reveal_bombs(&mut self.field);
             }
@@ -151,7 +151,6 @@ impl GameState {
 fn main() {
     let mut game = GameState::init();
     game.run();
-//    field[42] = 0x19;
 //    draw(&field);
 }
 

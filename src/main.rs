@@ -30,16 +30,17 @@ impl From<u8> for Cell {
         Self { state, value }
     }
 }
-impl Into<u8> for Cell {
-    fn into(self) -> u8 {
+
+impl From<Cell> for u8 {
+    fn from(cell: Cell) -> Self {
         let mut out = 0x00;
-        match self.state {
+        match cell.state {
             State::Hidden => out += 0x00,
             State::Revealed => out += 0x10,
             State::Marked => out += 0x20,
             State::Unknown => out += 0x30,
         }
-        out += self.value;
+        out += cell.value;
         out
     }
 }
@@ -66,6 +67,26 @@ impl GameState {
             let y: u16 = rng.gen_range(0, HEIGHT as u16);
             mine_positions.push([x, y]);
             field[x as usize + y as usize * WIDTH] = 0x09;
+            println!("Mine at {x}:{y}");
+            for y_pos in -1 as i16..=1 as i16 {
+                for x_pos in -1 as i16..=1 as i16 {
+                    if x_pos == 0 && y_pos == 0 {
+                        continue;
+                    }
+                    if x as i16 + x_pos > 1 && ((x as i16 + x_pos) as usize) < WIDTH {
+                        if y as i16 + y_pos > 1 && ((y as i16 + y_pos) as usize) < HEIGHT {
+                            if field[((x as i16 + x_pos) as usize)
+                                + ((y as i16 + y_pos) as usize) * WIDTH]
+                                == 0x09
+                            {
+                                continue;
+                            }
+                            field[((x as i16 + x_pos) as usize)
+                                + ((y as i16 + y_pos) as usize) * WIDTH] += 1;
+                        }
+                    }
+                }
+            }
         }
 
         Self {
@@ -92,7 +113,9 @@ impl GameState {
             println!("Where command is reveal or mark");
             while !in_accepted {
                 let mut buffer = String::new();
-                std::io::stdin().read_line(&mut buffer).expect("Failed to get stdin");
+                std::io::stdin()
+                    .read_line(&mut buffer)
+                    .expect("Failed to get stdin");
                 if buffer == "exit\r\n" {
                     println!("Exiting...");
                     self.running = false;
@@ -118,11 +141,18 @@ impl GameState {
     }
 
     fn execute(&mut self, command: &str) -> (bool, Option<[u16; 2]>) {
-        let split: Vec<String> = command.split_ascii_whitespace().map(|s| s.to_string()).collect();
+        let split: Vec<String> = command
+            .split_ascii_whitespace()
+            .map(|s| s.to_string())
+            .collect();
         if split.len() == 3 {
             let command = split[2].to_lowercase();
-            let x = split[0].parse::<u16>().expect("Failed to parse string to u16");
-            let y = split[1].parse::<u16>().expect("Failed to parse string to u16");
+            let x = split[0]
+                .parse::<u16>()
+                .expect("Failed to parse string to u16");
+            let y = split[1]
+                .parse::<u16>()
+                .expect("Failed to parse string to u16");
             if x as usize > WIDTH || y as usize > HEIGHT {
                 return (false, Some([x, y]));
             }
@@ -187,11 +217,11 @@ fn draw(field: &[u8; WIDTH * HEIGHT]) {
 
 fn reveal(origin: [u16; 2], field: &mut [u8; WIDTH * HEIGHT]) {
     let cell_origin = Cell::from(field[origin[0] as usize + origin[1] as usize * WIDTH]);
-    if origin[0] > 0 &&
-        (origin[0] as usize) < WIDTH &&
-        origin[1] > 0 &&
-        (origin[1] as usize) < HEIGHT &&
-        (origin[0] as usize) + (origin[1] as usize) * WIDTH < WIDTH * HEIGHT
+    if origin[0] > 0
+        && (origin[0] as usize) < WIDTH
+        && origin[1] > 0
+        && (origin[1] as usize) < HEIGHT
+        && (origin[0] as usize) + (origin[1] as usize) * WIDTH < WIDTH * HEIGHT
     {
         //println!("{:#}:{:#}", origin[0], origin[1]);
         for c in 0..9 {
@@ -210,11 +240,11 @@ fn reveal(origin: [u16; 2], field: &mut [u8; WIDTH * HEIGHT]) {
             if (pos[0] as usize) + (pos[1] as usize) * WIDTH < WIDTH * HEIGHT {
                 let mut n_cell = Cell::from(field[pos[0] as usize + pos[1] as usize * WIDTH]);
                 if pos != origin && n_cell.state != State::Revealed && n_cell.value != 9 {
-                    if n_cell.value < 9 {
+                    if n_cell.value < 9 && n_cell.value == 0 {
                         n_cell.state = State::Revealed;
                         field[pos[0] as usize + pos[1] as usize * WIDTH] = n_cell.into();
+                        reveal(pos, field);
                     }
-                    reveal(pos, field);
                 }
             }
         }
